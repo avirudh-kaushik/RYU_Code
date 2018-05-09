@@ -1,3 +1,6 @@
+from collections import defaultdict
+from heapq import *
+
 from ryu.base import app_manager
 from ryu.controller import mac_to_port
 from ryu.controller import ofp_event
@@ -40,6 +43,7 @@ class SimpleSwitch13(app_manager.RyuApp):
         self.no_of_nodes = 0
         self.no_of_links = 0
         self.i=0
+        self.edge_list = []
 
 
 
@@ -50,16 +54,24 @@ class SimpleSwitch13(app_manager.RyuApp):
 
 
     #-- This is the function which adds a flow entry to the the Controller
-    def add_flow(self, datapath, match, actions):
+    def add_flow(self, msg, datapath, match, actions):
 
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        mod = datapath.ofproto_parser.OFPFlowMod(
-            datapath=datapath, match=match, cookie=0,
-            command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0,
-            priority=ofproto.OFP_DEFAULT_PRIORITY, instructions=inst)
+
+        if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+            mod = parser.OFPFlowMod(datapath=datapath, buffer_id=msg.buffer_id,
+                                    priority=ofproto.OFP_DEFAULT_PRIORITY, match=match,
+                                    instructions=inst)
+
+        else:
+            mod = parser.OFPFlowMod(datapath=datapath, priority=ofproto.OFP_DEFAULT_PRIORITY,
+                                    match=match, instructions=inst)
+
+
+
         datapath.send_msg(mod)
 
 
@@ -83,6 +95,44 @@ class SimpleSwitch13(app_manager.RyuApp):
             datapath=datapath, match=match, cookie=0,
             command=ofproto.OFPFC_ADD, idle_timeout=0, hard_timeout=0, priority=0, instructions=inst)
         datapath.send_msg(mod)
+
+
+
+    #-- This is where I am inserting the Dijkstra's Algorithm Implementation --
+
+    def dijkstra(self,edges, f, t):
+        g = defaultdict(list)
+        for l,r,c in edges:
+            g[l].append((c,r))
+
+        q, seen = [(0,f,())], set()
+        while q:
+            (cost,v1,path) = heappop(q)
+            if v1 not in seen:
+                seen.add(v1)
+                path = (v1, path)
+                if v1 == t: return (cost, path)
+
+                for c, v2 in g.get(v1, ()):
+                    if v2 not in seen:
+                        heappush(q, (cost+c, v2, path))
+
+        return float("inf")
+
+    def dijkstra_call(self,edges, f, t):
+        out = self.dijkstra(edges, f, t)
+        data = {}
+        data['cost']=out[0]
+        aux=[]
+        while len(out)>1:
+            aux.append(out[0])
+            out = out[1]
+        aux.remove(data['cost'])
+        aux.reverse()
+        data['path']=aux
+        return aux
+
+    ### -- This is where the Dijkstra's Algorithm Implementation Ends --
 
 
 
@@ -182,9 +232,9 @@ class SimpleSwitch13(app_manager.RyuApp):
         ## We install a flow with MATCH(source,in_port) and we set the ACTION to drop the packet
         ## Hence we stop the flooding of the initial ping packets
         if src in self.mac_to_port[dpid] and in_port != self.mac_to_port[dpid][src]:
-            prio = 2
+            prio = 100
             actions = []
-            match = parser.OFPMatch(eth_src=src,in_port = in_port,eth_type = ethtype)
+            match = parser.OFPMatch(eth_src=src,eth_type = ethtype)
             inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
                 mod = parser.OFPFlowMod(datapath=datapath, buffer_id=msg.buffer_id,
@@ -242,17 +292,28 @@ class SimpleSwitch13(app_manager.RyuApp):
         ## We only Establish a FLow Table Entry if we are not Flooding
         if out_port != ofproto.OFPP_FLOOD:
             match = parser.OFPMatch(eth_dst=dst,in_port = in_port,eth_type = ethtype)
-            self.add_flow(datapath, match, actions)
+            self.add_flow(msg,datapath, match, actions)
             print "Adding flow for Switch:%s for inport:%s and destination:%s"%(dpid,in_port,dst)
+            out = datapath.ofproto_parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,actions=actions)
+            datapath.send_msg(out)
+
+        else:
+            prio = 1000
+            match = parser.OFPMatch(eth_src=src,in_port = in_port,eth_type = ethtype)
+            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,actions)]
+            if msg.buffer_id != ofproto.OFP_NO_BUFFER:
+                mod = parser.OFPFlowMod(datapath=datapath, buffer_id=msg.buffer_id,
+                                        priority=prio, match=match,
+                                        instructions=inst)
+
+            else:
+                mod = parser.OFPFlowMod(datapath=datapath, priority=prio,
+                                        match=match, instructions=inst)
+
+            datapath.send_msg(mod)
 
 
-        out = datapath.ofproto_parser.OFPPacketOut(
 
-            datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,
-
-            actions=actions)
-
-        datapath.send_msg(out)
 
 
     ## -- This is the Function which is called when we receive an IPv4 Packet
@@ -287,13 +348,14 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         print "Destination exists in the graph !"
         ## This is where the path is calculated
-        path=nx.shortest_path(self.net,self.host_to_switch[src],self.host_to_switch[dst])
-        print "The Path to the destination is:"
+        #path=nx.shortest_path(self.net,self.host_to_switch[src],self.host_to_switch[dst])
+        path = self.dijkstra_call(self.edge_list,self.host_to_switch[src],self.host_to_switch[dst]) ##- Call to the Dijkstra's Algorithm Function
+        print "The Dijkstra Path to the destination is:"
         print path
 
 
         ## -- The Only time this Function will be called is when the Source Host sends the packet to
-        ## -- its attached Switched. Here the Switch will Push the MPLS LABEL of its next hop.
+        ## -- its attached Switch. Here the Switch will Push the MPLS LABEL of its next hop.
 
         if self.host_to_switch[src] == dpid:
             ## We have to Push a Label to the Current Packet
@@ -307,7 +369,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             print "The Label being placed is:%s"%(swap_label)
             match = parser.OFPMatch(eth_dst = dst,in_port = in_port,eth_type = ethtype)
             actions = [parser.OFPActionPushMpls(ethertype=34887,type_=None,len_=None),parser.OFPActionSetField(mpls_label = swap_label),parser.OFPActionOutput(out_port)]
-            self.add_flow(datapath, match, actions)
+            self.add_flow(msg, datapath, match, actions)
             print "Adding flow for Switch:%s for inport:%s and destination:%s"%(dpid,in_port,dst)
 
             out = datapath.ofproto_parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id, in_port=in_port,actions=actions)
@@ -344,8 +406,9 @@ class SimpleSwitch13(app_manager.RyuApp):
         eth_MPLS = ether.ETH_TYPE_MPLS
         ethtype = eth.ethertype
 
-        path=nx.shortest_path(self.net,self.host_to_switch[src],self.host_to_switch[dst])
-        print "The Path to the destination is:"
+        #path=nx.shortest_path(self.net,self.host_to_switch[src],self.host_to_switch[dst])
+        path = self.dijkstra_call(self.edge_list,self.host_to_switch[src],self.host_to_switch[dst])  ## Call to the Dijkstra's Algorithm Function
+        print "The Dijkstra Path to the destination is:"
         print path
 
         ## -- This function can be called in 2 scenarios.
@@ -362,7 +425,7 @@ class SimpleSwitch13(app_manager.RyuApp):
             print "The Label being popped is:%s"%(curr_label)
             match = parser.OFPMatch(in_port = in_port,eth_dst = dst,eth_type = ethtype,mpls_label = mpls_proto.label)
             actions = [parser.OFPActionPopMpls(),parser.OFPActionOutput(out_port)]
-            self.add_flow(datapath, match, actions)
+            self.add_flow(msg, datapath, match, actions)
             print "Adding flow for Switch:%s for inport:%s and destination:%s"%(dpid,in_port,dst)
 
 
@@ -375,11 +438,11 @@ class SimpleSwitch13(app_manager.RyuApp):
             next=path[path.index(dpid)+1]
             ## This gives us the output port of the next hop.
             out_port=self.net[dpid][next]['port']
-            swap_label = self.mylabeltable[next][dst_switch] ## The Swap Label is the Label being placed on the packet. 
+            swap_label = self.mylabeltable[next][dst_switch] ## The Swap Label is the Label being placed on the packet.
             print "The Label being placed is:%s"%(swap_label)
             match = parser.OFPMatch(in_port = in_port,eth_dst = dst,eth_type = ethtype,mpls_label = mpls_proto.label)
             actions = [parser.OFPActionPopMpls(),parser.OFPActionPushMpls(),parser.OFPActionSetField(mpls_label = swap_label),parser.OFPActionOutput(out_port)]
-            self.add_flow(datapath, match, actions)
+            self.add_flow(msg, datapath, match, actions)
             print "Adding flow for Switch:%s for inport:%s and destination:%s"%(dpid,in_port,dst)
 
 
@@ -403,13 +466,20 @@ class SimpleSwitch13(app_manager.RyuApp):
                 self.mylabeltable[x][y] = k
                 k = k+10
 
+    def fill_out_edges(self,edges):
+        self.edge_list = []
+        for x in edges:
+            temp = (1,)
+            self.edge_list.append(x + temp)
+
 
 
     @set_ev_cls(event.EventSwitchEnter)
     ##-- This is the function which gets called initially when the Switches Connect to the Controller
     ##-- This creates the initial Topology for the Networkx Module for all the switches
     def get_topology_data(self, ev):
-        print "I am HERE !"
+        print "I am HERE !"        
+
         ## Creating a list of Switches from the topology
         switch_list = get_switch(self.topology_api_app, None)
 
@@ -445,6 +515,10 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         print "*List of links*"
 
-        print self.net.edges()
+        #print self.net.edges()
+
+        self.fill_out_edges(self.net.edges())
+
+        print self.edge_list
 
         self.fill_out_labels(switches)
