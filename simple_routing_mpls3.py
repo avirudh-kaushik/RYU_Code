@@ -349,48 +349,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                 if routes > 1:
                     path = self.find_best_path(paths)
                     self.path_directory[self.host_to_switch[src]][self.host_to_switch[dst]] = path
-                else:def dijkstra(self,edges, f, t):
-        g = defaultdict(list)
-        m_path = []
-        for l,r,c in edges:
-            g[l].append((c,r))
-
-        q, seen = [(0,f,())], set()
-        while q:
-            (cost,v1,path) = heappop(q)
-            if v1 not in seen:
-                seen.add(v1)
-            path = (v1, path)
-            if v1 == t:
-                if not m_path:
-                    m_path.append((cost,path))
-                elif cost < m_path[0][0]:
-                    del m_path[:]
-                    m_path.append((cost,path))
-                elif cost == m_path[0][0]:
-                    m_path.append((cost,path))
-
-            for c, v2 in g.get(v1, ()):
-                if v2 not in seen:
-                    heappush(q, (cost+c, v2, path))
-
-        return m_path
-
-    def dijkstra_call(self,edges, f, t):
-        out = self.dijkstra(edges, f, t)
-        ans = []
-        for i in out:
-            data = {}
-            data['cost']=i[0]
-            aux=[]
-            while len(i)>1:
-                aux.append(i[0])
-                i = i[1]
-            aux.remove(data['cost'])
-            aux.reverse()
-            data['path']=aux
-            ans.append(aux)
-        return ans
+                else:
                     path = paths[0]
                     self.path_directory[self.host_to_switch[src]][self.host_to_switch[dst]] = path
 
