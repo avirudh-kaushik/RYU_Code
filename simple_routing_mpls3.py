@@ -270,7 +270,8 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP or eth.ethertype == ether_types.ETH_TYPE_IPV6:
         # ignore lldp packet and the IPv6 Packets which are sent at the beginning of topology setup
-        # This gets rid of all the unneccesary packets which flow through def dijkstra(self,edges, f, t):
+        # This gets rid of all the unneccesary packets which flow through
+            return
 
 
 
