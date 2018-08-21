@@ -270,8 +270,8 @@ class SimpleSwitch13(app_manager.RyuApp):
 
         if eth.ethertype == ether_types.ETH_TYPE_LLDP or eth.ethertype == ether_types.ETH_TYPE_IPV6:
         # ignore lldp packet and the IPv6 Packets which are sent at the beginning of topology setup
-        # This gets rid of all the unneccesary packets which flow through in the beginning of topology setup
-            return
+        # This gets rid of all the unneccesary packets which flow through def dijkstra(self,edges, f, t):
+
 
 
 
@@ -391,48 +391,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                     cnt = self.link_flow_counter[a,b]
                     cnt = cnt + 1
                     self.link_flow_counter[a,b] = cnt
-                else:def dijkstra(self,edges, f, t):
-        g = defaultdict(list)
-        m_path = []
-        for l,r,c in edges:
-            g[l].append((c,r))
-
-        q, seen = [(0,f,())], set()
-        while q:
-            (cost,v1,path) = heappop(q)
-            if v1 not in seen:
-                seen.add(v1)
-            path = (v1, path)
-            if v1 == t:
-                if not m_path:
-                    m_path.append((cost,path))
-                elif cost < m_path[0][0]:
-                    del m_path[:]
-                    m_path.append((cost,path))
-                elif cost == m_path[0][0]:
-                    m_path.append((cost,path))
-
-            for c, v2 in g.get(v1, ()):
-                if v2 not in seen:
-                    heappush(q, (cost+c, v2, path))
-
-        return m_path
-
-    def dijkstra_call(self,edges, f, t):
-        out = self.dijkstra(edges, f, t)
-        ans = []
-        for i in out:
-            data = {}
-            data['cost']=i[0]
-            aux=[]
-            while len(i)>1:
-                aux.append(i[0])
-                i = i[1]
-            aux.remove(data['cost'])
-            aux.reverse()
-            data['path']=aux
-            ans.append(aux)
-        return ans
+                else:
                     cnt = self.link_flow_counter[b,a]
                     cnt = cnt + 1
                     self.link_flow_counter[b,a] = cnt
